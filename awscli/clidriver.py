@@ -85,7 +85,7 @@ class CLIDriver(object):
         self._argument_table = None
         self.alias_loader = AliasLoader()
 
-    def _get_cli_data(self):
+    def get_cli_data(self):
         # Not crazy about this but the data in here is needed in
         # several places (e.g. MainArgParser, ProviderHelp) so
         # we load it here once.
@@ -93,17 +93,17 @@ class CLIDriver(object):
             self._cli_data = self.session.get_data('cli')
         return self._cli_data
 
-    def _get_command_table(self):
+    def get_command_table(self):
         if self._command_table is None:
-            self._command_table = self._build_command_table()
+            self._command_table = self.build_command_table()
         return self._command_table
 
-    def _get_argument_table(self):
+    def get_argument_table(self):
         if self._argument_table is None:
-            self._argument_table = self._build_argument_table()
+            self._argument_table = self.build_argument_table()
         return self._argument_table
 
-    def _build_command_table(self):
+    def build_command_table(self):
         """
         Create the main parser to handle the global arguments.
 
@@ -111,14 +111,14 @@ class CLIDriver(object):
         :return: The parser object
 
         """
-        command_table = self._build_builtin_commands(self.session)
+        command_table = self.build_builtin_commands(self.session)
         self.session.emit('building-command-table.main',
                           command_table=command_table,
                           session=self.session,
                           command_object=self)
         return command_table
 
-    def _build_builtin_commands(self, session):
+    def build_builtin_commands(self, session):
         commands = OrderedDict()
         services = session.get_available_services()
         for service_name in services:
@@ -127,19 +127,19 @@ class CLIDriver(object):
                                                     service_name=service_name)
         return commands
 
-    def _add_aliases(self, command_table, parser):
-        parser = self._create_parser(command_table)
+    def add_aliases(self, command_table, parser):
+        parser = self.create_parser(command_table)
         injector = AliasCommandInjector(
             self.session, self.alias_loader)
         injector.inject_aliases(command_table, parser)
 
-    def _build_argument_table(self):
+    def build_argument_table(self):
         argument_table = OrderedDict()
-        cli_data = self._get_cli_data()
+        cli_data = self.get_cli_data()
         cli_arguments = cli_data.get('options', None)
         for option in cli_arguments:
             option_params = copy_kwargs(cli_arguments[option])
-            cli_argument = self._create_cli_argument(option, option_params)
+            cli_argument = self.create_cli_argument(option, option_params)
             cli_argument.add_to_arg_table(argument_table)
         # Then the final step is to send out an event so handlers
         # can add extra arguments or modify existing arguments.
@@ -147,7 +147,7 @@ class CLIDriver(object):
                           argument_table=argument_table)
         return argument_table
 
-    def _create_cli_argument(self, option_name, option_params):
+    def create_cli_argument(self, option_name, option_params):
         return CustomArgument(
             option_name, help_text=option_params.get('help', ''),
             dest=option_params.get('dest'),
@@ -158,21 +158,21 @@ class CLIDriver(object):
             cli_type_name=option_params.get('type'))
 
     def create_help_command(self):
-        cli_data = self._get_cli_data()
-        return ProviderHelpCommand(self.session, self._get_command_table(),
-                                   self._get_argument_table(),
+        cli_data = self.get_cli_data()
+        return ProviderHelpCommand(self.session, self.get_command_table(),
+                                   self.get_argument_table(),
                                    cli_data.get('description', None),
                                    cli_data.get('synopsis', None),
                                    cli_data.get('help_usage', None))
 
-    def _create_parser(self, command_table):
+    def create_parser(self, command_table):
         # Also add a 'help' command.
         command_table['help'] = self.create_help_command()
-        cli_data = self._get_cli_data()
+        cli_data = self.get_cli_data()
         parser = MainArgParser(
             command_table, self.session.user_agent(),
             cli_data.get('description', None),
-            self._get_argument_table(),
+            self.get_argument_table(),
             prog="aws")
         return parser
 
@@ -186,9 +186,9 @@ class CLIDriver(object):
         """
         if args is None:
             args = sys.argv[1:]
-        command_table = self._get_command_table()
-        parser = self._create_parser(command_table)
-        self._add_aliases(command_table, parser)
+        command_table = self.get_command_table()
+        parser = self.create_parser(command_table)
+        self.add_aliases(command_table, parser)
         parsed_args, remaining = parser.parse_known_args(args)
         try:
             # Because _handle_top_level_args emits events, it's possible
@@ -305,7 +305,7 @@ class ServiceCommand(CLICommand):
 
     @property
     def service_model(self):
-        return self._get_service_model()
+        return self.get_service_model()
 
     @property
     def lineage(self):
@@ -315,12 +315,12 @@ class ServiceCommand(CLICommand):
     def lineage(self, value):
         self._lineage = value
 
-    def _get_command_table(self):
+    def get_command_table(self):
         if self._command_table is None:
-            self._command_table = self._create_command_table()
+            self._command_table = self.create_command_table()
         return self._command_table
 
-    def _get_service_model(self):
+    def get_service_model(self):
         if self._service_model is None:
             api_version = self.session.get_config_variable('api_versions').get(
                 self._service_name, None)
@@ -332,14 +332,14 @@ class ServiceCommand(CLICommand):
         # Once we know we're trying to call a service for this operation
         # we can go ahead and create the parser for it.  We
         # can also grab the Service object from botocore.
-        service_parser = self._create_parser()
+        service_parser = self.create_parser()
         parsed_args, remaining = service_parser.parse_known_args(args)
-        command_table = self._get_command_table()
+        command_table = self.get_command_table()
         return command_table[parsed_args.operation](remaining, parsed_globals)
 
-    def _create_command_table(self):
+    def create_command_table(self):
         command_table = OrderedDict()
-        service_model = self._get_service_model()
+        service_model = self.get_service_model()
         for operation_name in service_model.operation_names:
             cli_name = xform_name(operation_name, '-')
             operation_model = service_model.operation_model(operation_name)
@@ -354,25 +354,25 @@ class ServiceCommand(CLICommand):
                           command_table=command_table,
                           session=self.session,
                           command_object=self)
-        self._add_lineage(command_table)
+        self.add_lineage(command_table)
         return command_table
 
-    def _add_lineage(self, command_table):
+    def add_lineage(self, command_table):
         for command in command_table:
             command_obj = command_table[command]
             command_obj.lineage = self.lineage + [command_obj]
 
     def create_help_command(self):
-        command_table = self._get_command_table()
+        command_table = self.get_command_table()
         return ServiceHelpCommand(session=self.session,
-                                  obj=self._get_service_model(),
+                                  obj=self.get_service_model(),
                                   command_table=command_table,
                                   arg_table=None,
                                   event_class='.'.join(self.lineage_names),
                                   name=self._name)
 
-    def _create_parser(self):
-        command_table = self._get_command_table()
+    def create_parser(self):
+        command_table = self.get_command_table()
         # Also add a 'help' command.
         command_table['help'] = self.create_help_command()
         return ServiceArgParser(
@@ -450,7 +450,7 @@ class ServiceOperation(object):
     @property
     def arg_table(self):
         if self._arg_table is None:
-            self._arg_table = self._create_argument_table()
+            self._arg_table = self.create_argument_table()
         return self._arg_table
 
     def __call__(self, args, parsed_globals):
@@ -460,8 +460,8 @@ class ServiceOperation(object):
             (self._parent_name, self._name)
         self._emit(event, argument_table=self.arg_table, args=args,
                    session=self._session)
-        operation_parser = self._create_operation_parser(self.arg_table)
-        self._add_help(operation_parser)
+        operation_parser = self.create_operation_parser(self.arg_table)
+        self.add_help(operation_parser)
         parsed_args, remaining = operation_parser.parse_known_args(args)
         if parsed_args.help == 'help':
             op_help = self.create_help_command()
@@ -475,7 +475,7 @@ class ServiceOperation(object):
                                                  self._name)
         self._emit(event, parsed_args=parsed_args,
                    parsed_globals=parsed_globals)
-        call_parameters = self._build_call_parameters(
+        call_parameters = self.build_call_parameters(
             parsed_args, self.arg_table)
 
         event = 'calling-command.%s.%s' % (self._parent_name,
@@ -514,13 +514,13 @@ class ServiceOperation(object):
             arg_table=self.arg_table,
             name=self._name, event_class='.'.join(self.lineage_names))
 
-    def _add_help(self, parser):
+    def add_help(self, parser):
         # The 'help' output is processed a little differently from
         # the operation help because the arg_table has
         # CLIArguments for values.
         parser.add_argument('help', nargs='?')
 
-    def _build_call_parameters(self, args, arg_table):
+    def build_call_parameters(self, args, arg_table):
         # We need to convert the args specified on the command
         # line as valid **kwargs we can hand to botocore.
         service_params = {}
@@ -531,11 +531,11 @@ class ServiceOperation(object):
             py_name = arg_object.py_name
             if py_name in parsed_args:
                 value = parsed_args[py_name]
-                value = self._unpack_arg(arg_object, value)
+                value = self.unpack_arg(arg_object, value)
                 arg_object.add_to_params(service_params, value)
         return service_params
 
-    def _unpack_arg(self, cli_argument, value):
+    def unpack_arg(self, cli_argument, value):
         # Unpacks a commandline argument into a Python value by firing the
         # load-cli-arg.service-name.operation-name event.
         session = self._session
@@ -545,7 +545,7 @@ class ServiceOperation(object):
         return unpack_argument(session, service_name, operation_name,
                                cli_argument, value)
 
-    def _create_argument_table(self):
+    def create_argument_table(self):
         argument_table = OrderedDict()
         input_shape = self._operation_model.input_shape
         required_arguments = []
@@ -583,7 +583,7 @@ class ServiceOperation(object):
         return self._session.emit_first_non_none_response(
             name, **kwargs)
 
-    def _create_operation_parser(self, arg_table):
+    def create_operation_parser(self, arg_table):
         parser = ArgTableArgParser(arg_table)
         return parser
 
